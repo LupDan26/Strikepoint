@@ -30,10 +30,12 @@
   #waveBox { position: absolute; top: 22px; left: 200px; }
   #waveNum { font-size: 30px; font-weight: 700; color: var(--accent); line-height: 1; }
   #enemyLeft { font-size: 14px; font-weight: 600; color: var(--dim); margin-top: 4px; }
-  #uav { display: flex; gap: 3px; margin-top: 7px; }
-  #uav i { width: 9px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.18); }
-  #uav i.f { background: var(--hud); }
-  #uav.on i { background: #ff6b5e; }
+  #streaks { position: absolute; left: 22px; bottom: 46px; display: flex; flex-direction: column; gap: 4px; }
+  .ks { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; letter-spacing: .14em; color: var(--dim); }
+  .ks i { font-style: normal; width: 18px; text-align: center; font-variant-numeric: tabular-nums; }
+  .ks.ready { color: var(--accent); }
+  .ks kbd { font: inherit; font-size: 11px; width: 18px; text-align: center; border: 1px solid var(--accent); border-radius: 3px; padding: 0 2px; }
+  .kc { font-size: 11px; letter-spacing: .16em; color: var(--dim); margin-top: 2px; }
   #scoreBox { position: absolute; top: 18px; right: 22px; text-align: right; }
   #score { font-size: 34px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
   #fps { font-size: 12px; color: var(--dim); margin-top: 4px; font-variant-numeric: tabular-nums; }
@@ -197,7 +199,8 @@
 
 <div id="hud" hidden>
   <canvas id="radar"></canvas>
-  <div id="waveBox" class="shadow"><div id="waveNum">WAVE 1</div><div id="enemyLeft">0 hostiles</div><div id="uav" title="UAV"></div></div>
+  <div id="waveBox" class="shadow"><div id="waveNum">WAVE 1</div><div id="enemyLeft">0 hostiles</div></div>
+  <div id="streaks" class="shadow"></div>
   <div id="scoreBox" class="shadow"><div id="score">0</div><div id="fps"></div></div>
   <div id="killfeed" class="shadow"></div>
   <div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><i class="c"></i></div>
@@ -252,6 +255,7 @@
         <kbd>Space</kbd><span>Jump</span>
         <kbd>R</kbd><span>Reload</span>
         <kbd>1 2 Q</kbd><span>Weapons</span>
+        <kbd>4 5 6</kbd><span>Killstreaks</span>
         <kbd>G</kbd><span>Hold to cook grenade</span>
         <kbd>V</kbd><span>Melee</span>
         <kbd>Esc</kbd><span>Pause</span>
@@ -1412,6 +1416,20 @@ const Sfx = (() => {
     },
     claw(x, z) { if (!ok()) return; const t = ctx.currentTime; nb(t, 0.16, 0.45, 'bandpass', 900, 2600, 2, master); osc(t, 0.12, 0.35, 'sine', 160, 60, master); },
     round() { if (!ok()) return; const t = ctx.currentTime; [0, 0.5, 1.0].forEach((d, i) => { osc(t + d, 1.4, 0.22, 'sine', [110, 104, 98][i], 0, master); osc(t + d, 1.4, 0.08, 'triangle', [220, 208, 196][i], 0, master); }); },
+    ksReady() { if (!ok()) return; const t = ctx.currentTime; osc(t, 0.12, 0.2, 'triangle', 880, 0, master); osc(t + 0.12, 0.2, 0.2, 'triangle', 1320, 0, master); },
+    radio() { if (!ok()) return; const t = ctx.currentTime; nb(t, 0.08, 0.25, 'bandpass', 2400, 0, 3, master); osc(t + 0.1, 0.06, 0.12, 'square', 1000, 0, master); osc(t + 0.2, 0.06, 0.12, 'square', 1000, 0, master); nb(t + 0.3, 0.1, 0.2, 'bandpass', 2400, 0, 3, master); },
+    jet(delay, dur) { if (!ok()) return; const t = ctx.currentTime + delay; const src = ctx.createBufferSource(); src.buffer = noise; src.loop = true;
+      const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(3500, t); f.frequency.exponentialRampToValueAtTime(500, t + dur);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.9, t + dur * 0.45); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      src.connect(f); f.connect(g); g.connect(master); src.start(t); src.stop(t + dur + 0.1); },
+    brrrt(delay, dur) { if (!ok()) return; const t = ctx.currentTime + delay;
+      const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 64; const lf = ctx.createOscillator(); lf.frequency.value = 65; lf.type = 'square'; const lg = ctx.createGain(); lg.gain.value = 0.5;
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.7, t + 0.05); g.gain.setValueAtTime(0.7, t + dur); g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.25);
+      lf.connect(lg); lg.connect(g.gain); o.connect(g); g.connect(master); o.start(t); lf.start(t); o.stop(t + dur + 0.3); lf.stop(t + dur + 0.3);
+      nb(t, dur + 0.2, 0.5, 'bandpass', 900, 600, 1.2, master); },
+    rotor(x, z, y) { if (!ok()) return; const d = Math.hypot(x - P.pos.x, z - P.pos.z, y - P.pos.y); const v = 0.5 / (1 + d * 0.05); if (v < 0.02) return; nb(ctx.currentTime, 0.07, v, 'lowpass', 260, 90, 1, master); },
+    minigun(x, z) { if (!ok()) return; const t = ctx.currentTime, r = relPan(x, z), v = 0.4 / (1 + r.d * 0.03), dest = panned(r.pan * 0.6); for (let i = 0; i < 14; i++) nb(t + i * 0.06, 0.05, v, 'bandpass', 1600, 700, 1.5, dest); },
+    rocket(x, z) { if (!ok()) return; const t = ctx.currentTime; nb(t, 0.5, 0.35, 'bandpass', 2200, 400, 1.2, master); },
     cookTick() { if (!ok()) return; osc(ctx.currentTime, 0.05, 0.12, 'square', 1800, 1700, master); },
     rayHit(x, z) {
       if (!ok()) return; const t = ctx.currentTime, r = relPan(x, z), att = 0.9 / (1 + r.d * 0.06), dest = panned(r.pan * 0.6);
@@ -2738,7 +2756,7 @@ function damageEnemy(e, dmg, how, kx, kz) {
   e.aim = Math.max(e.aim, e.type.reaction * 0.6);
   e.vx += kx * 1.5; e.vz += kz * 1.5;
   hitT = 0.14; hitKill = false;
-  if (how !== 'melee' && how !== 'nade') Sfx.hit(how === 'head');
+  if (how !== 'melee' && how !== 'nade' && how !== 'warthog' && how !== 'chopper') Sfx.hit(how === 'head');
   if (e.hp <= 0) killEnemy(e, how);
 }
 function killEnemy(e, how) {
@@ -2752,6 +2770,8 @@ function killEnemy(e, how) {
   else if (how === 'melee') { pts += 75; label = 'Melee'; }
   else if (how === 'nade') { pts += 50; label = lethal === 'semtex' ? 'Semtex' : 'Grenade'; }
   else if (how === 'ray') { pts += 25; label = 'Ray Gun'; }
+  else if (how === 'warthog') label = 'Warthog';
+  else if (how === 'chopper') label = 'Chopper';
   multi = time - lastKillTime < 1.8 ? multi + 1 : 1;
   lastKillTime = time;
   if (multi >= 2) {
@@ -2759,10 +2779,10 @@ function killEnemy(e, how) {
     showBanner(['', '', 'Double kill', 'Triple kill', 'Fury kill', 'Frenzy kill'][Math.min(multi, 5)], `+${50 * multi}`, 1.4);
   }
   addScore(pts, label);
-  const wname = how === 'melee' ? 'Knife' : how === 'nade' ? (lethal === 'semtex' ? 'Semtex' : 'Frag') : how === 'ray' ? 'Ray Gun' : cur().name.split(' ')[0];
+  const wname = how === 'melee' ? 'Knife' : how === 'nade' ? (lethal === 'semtex' ? 'Semtex' : 'Frag') : how === 'ray' ? 'Ray Gun' : how === 'warthog' ? 'Warthog' : how === 'chopper' ? 'Chopper' : cur().name.split(' ')[0];
   addFeed(`You <b>[${wname}]</b> ${e.type.name}${how === 'head' ? ' <span class="hs">✛</span>' : ''}`);
   Sfx.kill();
-  if (stats.kills % 8 === 0) { uavT = 25; showBanner('UAV online', 'Hostiles revealed on radar', 2); Sfx.uav(); }
+  if (how !== 'warthog' && how !== 'chopper') addStreak();
   if (Math.random() < e.type.drop * (has('scavenger') ? 1.8 : 1)) spawnPickup(e.x, e.z);
 }
 const _ft = { x: 0, z: 0 };
@@ -3041,6 +3061,210 @@ function updatePickups(dt) {
 }
 
 // =====================================================================
+// Killstreaks: UAV (3), Warthog strafing run (7), Attack Chopper (11)
+// =====================================================================
+const KS = [
+  { id: 'uav', name: 'UAV', kills: 3, key: '4' },
+  { id: 'warthog', name: 'Warthog', kills: 7, key: '5' },
+  { id: 'chopper', name: 'Chopper', kills: 11, key: '6' },
+];
+let streak = 0;
+const ksReady = { uav: 0, warthog: 0, chopper: 0 };
+const ksMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+// A-10 Warthog (model faces -z, metres)
+const warthog = new THREE.Group();
+{
+  const a = [], G = 0x6d7568, D = 0x5a6156;
+  bx(a, 1.5, 1.6, 13, 0, 0, 0, G); bx(a, 1.1, 1.0, 1.6, 0, -0.1, -7.2, G); bx(a, 0.25, 0.25, 1.8, 0, -0.35, -8.6, 0x2a2b2e);
+  bx(a, 0.9, 0.7, 1.8, 0, 0.95, -4.6, 0x2b3a4c);
+  bx(a, 17.5, 0.28, 2.8, 0, -0.2, -0.6, G); bx(a, 17.6, 0.08, 0.3, 0, -0.04, 0.7, D);
+  for (const s of [-1, 1]) {
+    bx(a, 1.2, 1.2, 3.4, s * 1.5, 1.1, 3.6, 0x5d655a); bx(a, 1.0, 1.0, 0.1, s * 1.5, 1.1, 1.86, 0x1d1e20); bx(a, 0.3, 0.6, 1.0, s * 1.5, 0.6, 3.2, G);
+    bx(a, 0.2, 2.6, 1.9, s * 3.1, 1.1, 6.6, G);
+    bx(a, 0.4, 0.4, 2.2, s * 3.5, -0.6, -0.4, 0x3e4433); bx(a, 0.4, 0.4, 2.2, s * 5.5, -0.6, -0.4, 0x3e4433);
+    bx(a, 0.02, 0.45, 1.3, s * 0.56, -0.25, -6.9, 0xa82a22); // shark mouth
+    for (let i = 0; i < 4; i++) bx(a, 0.03, 0.12, 0.1, s * 0.565, -0.12, -7.4 + i * 0.3, 0xf2f2f2);
+  }
+  bx(a, 6.2, 0.2, 1.8, 0, 0.3, 6.6, G);
+  const m = new THREE.Mesh(mergeBoxes(a), ksMat); m.castShadow = true;
+  warthog.add(m); warthog.visible = false; scene.add(warthog);
+}
+// AH-64 style attack chopper (faces -z)
+const heliModel = new THREE.Group();
+const heliRotor = new THREE.Mesh(mergeBoxes((() => { const r = []; bx(r, 13, 0.06, 0.45, 0, 0, 0, 0x1d1e20); bx(r, 0.45, 0.06, 13, 0, 0, 0, 0x1d1e20); return r; })()), ksMat);
+const heliTail = new THREE.Mesh(mergeBoxes((() => { const r = []; bx(r, 0.06, 2.2, 0.25, 0, 0, 0, 0x1d1e20); bx(r, 0.06, 0.25, 2.2, 0, 0, 0, 0x1d1e20); return r; })()), ksMat);
+{
+  const h = [], O = 0x3d4733;
+  bx(h, 1.3, 1.5, 5.2, 0, 0, 0, O); bx(h, 1.0, 0.9, 1.6, 0, 0.35, -2.2, 0x2b3a4c); bx(h, 1.0, 0.9, 1.4, 0, 0.55, -0.7, 0x2b3a4c);
+  bx(h, 0.9, 0.7, 1.0, 0, -0.1, -3.1, O); bx(h, 0.5, 0.5, 0.5, 0, -0.45, -3.5, 0x1d1e20);
+  bx(h, 0.5, 0.6, 5.5, 0, 0.3, 5.2, O); bx(h, 0.2, 1.8, 1.1, 0, 1.0, 7.8, O); bx(h, 2.2, 0.15, 0.7, 0, 0.3, 7.4, O);
+  bx(h, 3.6, 0.15, 1.0, 0, -0.1, -0.2, O); bx(h, 0.25, 0.6, 0.25, 0, 1.05, 0, 0x1d1e20);
+  for (const s of [-1, 1]) {
+    bx(h, 0.45, 0.45, 1.3, s * 1.6, -0.45, -0.3, 0x2a2b2e); bx(h, 0.18, 0.18, 1.4, s * 1.15, -0.4, -0.2, 0x6a6e66);
+    bx(h, 0.6, 0.6, 1.8, s * 0.85, 0.55, 0.6, 0x353d2c);
+    bx(h, 0.15, 0.6, 0.15, s * 0.8, -1.0, -1.2, 0x1d1e20); bx(h, 0.3, 0.4, 0.4, s * 0.8, -1.3, -1.2, 0x111111);
+  }
+  bx(h, 0.4, 0.3, 0.4, 0, -0.8, -2.2, 0x2a2b2e); bx(h, 0.12, 0.12, 1.0, 0, -0.9, -2.7, 0x1d1e20);
+  const m = new THREE.Mesh(mergeBoxes(h), ksMat); m.castShadow = true;
+  heliModel.add(m);
+  heliRotor.position.y = 1.4; heliModel.add(heliRotor);
+  heliTail.position.set(0.25, 1.0, 7.9); heliModel.add(heliTail);
+  heliModel.visible = false; scene.add(heliModel);
+}
+const strike = { active: false, tx: 0, tz: 0, dx: 0, dz: 1, along: 0, gunT: 0, bombs: 0 };
+const heli = { active: false, t: 0, ang: 0, x: 0, y: 16, z: 0, yaw: 0, target: null, seekT: 0, fireT: 0, burst: 0, rocketT: 2.5, rotorT: 0 };
+const pendingBlasts = [];
+const A10_SPEED = 75, A10_ALT = 24;
+
+function addStreak() {
+  streak++;
+  for (const k of KS) if (streak === k.kills) { ksReady[k.id]++; showBanner(`${k.name} ready`, `Press ${k.key}`, 2); Sfx.ksReady(); }
+  if (streak >= KS[KS.length - 1].kills) streak = 0; // earned them all: start the cycle again
+}
+function useStreak(id) {
+  if (!ksReady[id] || !P.alive) return;
+  if (id === 'warthog' && strike.active) return;
+  if (id === 'chopper' && heli.active) return;
+  ksReady[id]--;
+  if (id === 'uav') { uavT = 30; showBanner('UAV online', '', 2); Sfx.uav(); }
+  else if (id === 'warthog') callWarthog();
+  else callChopper();
+}
+function groundHeight(x, z) { return Math.max(0, 30 - raycastWorld(x, 30, z, 0, -1, 0, 30, true)); }
+// streak damage never hurts the player and doesn't count toward the next streak
+function streakBlast(x, y, z, R, dmg, how) {
+  const ex = explosions.find((e) => e.t >= 1) || explosions[0];
+  ex.t = 0; ex.size = R * 0.8; ex.mesh.material.color.setHex(0xffa040); ex.mesh.position.set(x, y + 0.4, z); ex.mesh.visible = true;
+  for (let i = 0; i < 30; i++) { const a = Math.random() * Math.PI * 2, sp = rand(4, 13); sparks.emit(x, y + 0.3, z, Math.cos(a) * sp, rand(2, 12), Math.sin(a) * sp, 1, rand(0.5, 0.8), 0.2, rand(0.25, 0.7), 14); }
+  for (let i = 0; i < 10; i++) smoke.emit(x + rand(-1, 1), y + rand(0.3, 1.5), z + rand(-1, 1), rand(-1.5, 1.5), rand(0.8, 2.5), rand(-1.5, 1.5), 0.25, 0.22, 0.2, rand(1.4, 2.4), -0.4, 0.8);
+  addDecal(x, y + 0.01, z, 0, 1, 0);
+  Sfx.explosion(x, z);
+  shake = Math.max(shake, clamp(1 - Math.hypot(P.pos.x - x, P.pos.z - z) / 30, 0, 0.7));
+  for (const e of enemies) {
+    if (!e.active || e.dead) continue;
+    const d = Math.hypot(e.x - x, 0.9 * e.type.scale - y, e.z - z);
+    if (d >= R) continue;
+    damageEnemy(e, dmg * (1 - d / R) + dmg * 0.25, how, 0, 0);
+    knockback(e, e.x - x, e.z - z, 6 + 8 * (1 - d / R));
+  }
+}
+function callWarthog() {
+  const m = camera.matrixWorld.elements;
+  let dx = -m[8], dy = -m[9], dz = -m[10];
+  const t = raycastWorld(camera.position.x, camera.position.y, camera.position.z, dx, dy, dz, 160, true);
+  let tx = camera.position.x + dx * Math.min(t, 60), tz = camera.position.z + dz * Math.min(t, 60);
+  tx = clamp(tx, -34, 34); tz = clamp(tz, -26, 26);
+  const fl = Math.hypot(dx, dz) || 1;
+  Object.assign(strike, { active: true, tx, tz, dx: dx / fl, dz: dz / fl, along: -380, gunT: 0, bombs: 0 });
+  warthog.visible = true;
+  showBanner('Warthog inbound', '', 2);
+  Sfx.radio(); Sfx.jet(3.1, 4.2); Sfx.brrrt((380 - 110) / A10_SPEED, 100 / A10_SPEED);
+}
+function updateStrike(dt) {
+  if (!strike.active) return;
+  const s = strike;
+  s.along += A10_SPEED * dt;
+  const dive = clamp(1 - Math.abs(s.along + 40) / 160, 0, 1);
+  const px = s.tx + s.dx * s.along, pz = s.tz + s.dz * s.along, py = A10_ALT - 7 * dive;
+  warthog.position.set(px, py, pz);
+  warthog.rotation.set(-0.12 * dive * Math.sign(-(s.along + 40)), Math.atan2(-s.dx, -s.dz), 0, 'YXZ');
+  if (s.along > -110 && s.along < -10) { // 30mm gun run: impacts march along the ground toward and past the target
+    s.gunT -= dt;
+    while (s.gunT <= 0) {
+      s.gunT += 0.03;
+      const u = (s.along + 110) / 100, k = lerp(-28, 24, u);
+      const ix = s.tx + s.dx * k + rand(-1.6, 1.6) * s.dz + rand(-0.6, 0.6), iz = s.tz + s.dz * k - rand(-1.6, 1.6) * s.dx + rand(-0.6, 0.6);
+      const iy = groundHeight(ix, iz);
+      if (Math.random() < 0.4) spawnTracer(px + s.dx * 8, py - 0.5, pz + s.dz * 8, ix, iy, iz, 1, 0.85, 0.4, 600);
+      for (let i = 0; i < 3; i++) sparks.emit(ix, iy + 0.05, iz, rand(-3, 3), rand(2, 7), rand(-3, 3), 1, 0.75, 0.3, rand(0.1, 0.3), 12);
+      for (let i = 0; i < 3; i++) dust.emit(ix, iy + 0.05, iz, rand(-2, 2), rand(1, 4), rand(-2, 2), 0.55, 0.5, 0.42, rand(0.4, 0.9), 9);
+      if (Math.random() < 0.5) addDecal(ix, iy + 0.01, iz, 0, 1, 0);
+      for (const e of enemies) if (e.active && !e.dead && Math.hypot(e.x - ix, e.z - iz) < 2.0) { damageEnemy(e, 90, 'warthog', s.dx, s.dz); knockback(e, s.dx, s.dz, 3); }
+    }
+  }
+  if (s.bombs === 0 && s.along > -45) { s.bombs = 1; pendingBlasts.push({ t: 1.0, x: s.tx - s.dx * 4, z: s.tz - s.dz * 4, R: 9, dmg: 400, how: 'warthog' }); }
+  if (s.bombs === 1 && s.along > -25) { s.bombs = 2; pendingBlasts.push({ t: 1.0, x: s.tx + s.dx * 5, z: s.tz + s.dz * 5, R: 9, dmg: 400, how: 'warthog' }); }
+  if (s.along > 380) { s.active = false; warthog.visible = false; }
+}
+function callChopper() {
+  const a = Math.atan2(P.pos.z, P.pos.x) + Math.PI;
+  Object.assign(heli, { active: true, t: 40, ang: a, x: Math.cos(a) * 90, y: 30, z: Math.sin(a) * 90, yaw: 0, target: null, seekT: 0, fireT: 0, burst: 0, rocketT: 3, rotorT: 0 });
+  heliModel.visible = true;
+  showBanner('Attack chopper inbound', '', 2);
+  Sfx.radio();
+}
+const _hg = new V3();
+function heliGun(out) { const c = Math.cos(heli.yaw), s = Math.sin(heli.yaw); return out.set(heli.x + (0 * c + -2.9 * s), heli.y - 0.9, heli.z + (0 * -s + -2.9 * c)); }
+function updateHeli(dt) {
+  if (!heli.active) return;
+  const h = heli;
+  h.t -= dt;
+  let gx, gy, gz;
+  if (h.t > 0) { h.ang += dt * 0.22; const R = 18 + 6 * Math.sin(time * 0.3); gx = Math.cos(h.ang) * R; gz = Math.sin(h.ang) * R * 0.75; gy = 15 + Math.sin(time * 0.7) * 1.5; }
+  else { gx = Math.cos(h.ang) * 140; gz = Math.sin(h.ang) * 140; gy = 45; }
+  const dx = gx - h.x, dy = gy - h.y, dz = gz - h.z, d = Math.hypot(dx, dy, dz) || 1, sp = Math.min(h.t > 0 ? 14 : 24, d * 1.5);
+  const vx = dx / d * sp, vz = dz / d * sp;
+  h.x += vx * dt; h.y += dy / d * sp * dt; h.z += vz * dt;
+  // targeting
+  h.seekT -= dt;
+  if (h.seekT <= 0) {
+    h.seekT = 0.3; h.target = null;
+    let best = 70;
+    for (const e of enemies) {
+      if (!e.active || e.dead || e.yOff < -0.5) continue;
+      const ex = e.x - h.x, ey = 0.9 * e.type.scale - h.y, ez = e.z - h.z, L = Math.hypot(ex, ey, ez);
+      if (L < best && raycastWorld(h.x, h.y - 1, h.z, ex / L, ey / L, ez / L, L, false) >= L - 0.3) { best = L; h.target = e; }
+    }
+  }
+  const fy = h.target ? Math.atan2(-(h.target.x - h.x), -(h.target.z - h.z)) : Math.atan2(-vx, -vz);
+  h.yaw += clamp(wrapAngle(fy - h.yaw), -1.8 * dt, 1.8 * dt);
+  heliModel.position.set(h.x, h.y, h.z);
+  heliModel.rotation.set(clamp(sp / 14, 0, 1) * -0.12, h.yaw, Math.sin(time * 0.9) * 0.04, 'YXZ');
+  heliRotor.rotation.y += dt * 38; heliTail.rotation.x += dt * 55;
+  h.rotorT -= dt;
+  if (h.rotorT <= 0) { h.rotorT = 0.09; Sfx.rotor(h.x, h.z, h.y); }
+  // minigun bursts and rockets
+  const e = h.target;
+  if (e && h.t > 0 && (e.active && !e.dead)) {
+    h.fireT -= dt;
+    if (h.fireT <= 0) {
+      if (h.burst <= 0) { h.burst = 14; Sfx.minigun(h.x, h.z); }
+      h.burst--; h.fireT = h.burst > 0 ? 0.06 : 0.9;
+      heliGun(_hg);
+      const hit = Math.random() < 0.55, tx = e.x + (hit ? 0 : rand(-1.5, 1.5)), tz = e.z + (hit ? 0 : rand(-1.5, 1.5)), ty = hit ? 1.0 * e.type.scale : groundHeight(tx, tz);
+      spawnTracer(_hg.x, _hg.y, _hg.z, tx, ty, tz, 1, 0.8, 0.35, 420);
+      if (hit) damageEnemy(e, 34, 'chopper', 0, 0);
+      else { for (let i = 0; i < 3; i++) dust.emit(tx, ty + 0.05, tz, rand(-2, 2), rand(1, 3), rand(-2, 2), 0.55, 0.5, 0.42, rand(0.3, 0.6), 9); addDecal(tx, ty + 0.01, tz, 0, 1, 0); }
+    }
+    h.rocketT -= dt;
+    if (h.rocketT <= 0) {
+      h.rocketT = 3.5;
+      heliGun(_hg);
+      const ty = groundHeight(e.x, e.z);
+      spawnTracer(_hg.x, _hg.y + 0.4, _hg.z, e.x, ty, e.z, 1, 0.6, 0.3, 120);
+      const L = Math.hypot(e.x - _hg.x, ty - _hg.y, e.z - _hg.z);
+      for (let i = 0; i < 6; i++) { const u = i / 6; smoke.emit(lerp(_hg.x, e.x, u), lerp(_hg.y, ty, u), lerp(_hg.z, e.z, u), 0, 0.4, 0, 0.6, 0.6, 0.6, 1.0, -0.2, 0.5); }
+      pendingBlasts.push({ t: L / 120, x: e.x, z: e.z, R: 4.5, dmg: 260, how: 'chopper' });
+      Sfx.rocket(h.x, h.z);
+    }
+  }
+  if (h.t < -6) { h.active = false; heliModel.visible = false; }
+}
+function updateStreaks(dt) {
+  updateStrike(dt);
+  updateHeli(dt);
+  for (let i = pendingBlasts.length - 1; i >= 0; i--) {
+    const b = pendingBlasts[i];
+    b.t -= dt;
+    if (b.t <= 0) { pendingBlasts.splice(i, 1); streakBlast(b.x, groundHeight(b.x, b.z), b.z, b.R, b.dmg, b.how); }
+  }
+}
+function resetStreaks() {
+  streak = 0; for (const k of KS) ksReady[k.id] = 0;
+  strike.active = false; warthog.visible = false; heli.active = false; heliModel.visible = false; pendingBlasts.length = 0;
+}
+
+// =====================================================================
 // Game state, waves, scoring
 // =====================================================================
 let state = 'menu', locked = false, time = 0, score = 0, uavT = 0, multi = 0, lastKillTime = -99, deathT = 0, menuAngle = 0;
@@ -3170,6 +3394,7 @@ function resetGame() {
   for (const w of ARSENAL) { w.mag = w.magSize; w.reserve = w.reserveStart; w.cooldown = 0; w.slideLock = false; w.cylTarget = 0; resetGunParts(w); }
   switchT = 0; reloading = false; meleeT = 0; throwT = 0; adsT = 0; sprintT = 0; bloom = 0; kickPitch = 0; kickYaw = 0; recoilZ = 0; recoilR = 0; pumpT = 0; boltT = 0; slideT = 0; hammerT = 0; rgPulse = 0;
   prevIdx = 1; setModel(0);
+  resetStreaks();
   nadeCount = 2; uavT = 0; score = 0; multi = 0; lastKillTime = -99; time = 0;
   stats = { kills: 0, heads: 0, shots: 0, hits: 0 };
   wave.n = 0; wave.phase = 'break'; wave.timer = 3; wave.toSpawn = 0;
@@ -3185,7 +3410,7 @@ function resetGame() {
 // HUD
 // =====================================================================
 const hud = {
-  root: $('hud'), wave: $('waveNum'), left: $('enemyLeft'), uav: $('uav'), score: $('score'), fps: $('fps'), feed: $('killfeed'),
+  root: $('hud'), wave: $('waveNum'), left: $('enemyLeft'), streaks: $('streaks'), score: $('score'), fps: $('fps'), feed: $('killfeed'),
   ch: $('crosshair'), chT: document.querySelector('#crosshair .t'), chB: document.querySelector('#crosshair .b'),
   chL: document.querySelector('#crosshair .l'), chR: document.querySelector('#crosshair .r'),
   hit: $('hitmarker'), points: $('points'), hint: $('hint'), banner: $('banner'), bannerMain: $('bannerMain'), bannerSub: $('bannerSub'),
@@ -3218,6 +3443,9 @@ function drawRadar() {
   c.drawImage(mapCanvas, -(P.pos.x + MAP) * RADAR_PPM, -(P.pos.z + MAP) * RADAR_PPM, mapCanvas.width * k, mapCanvas.height * k);
   c.fillStyle = '#8cff6a';
   for (const p of pickups) if (p.active) c.fillRect((p.x - P.pos.x) * RADAR_PPM - 2.5, (p.z - P.pos.z) * RADAR_PPM - 2.5, 5, 5);
+  c.fillStyle = '#5ad8ff';
+  if (heli.active) { c.beginPath(); c.arc((heli.x - P.pos.x) * RADAR_PPM, (heli.z - P.pos.z) * RADAR_PPM, 4.5, 0, Math.PI * 2); c.fill(); }
+  if (strike.active) c.fillRect((warthog.position.x - P.pos.x) * RADAR_PPM - 4, (warthog.position.z - P.pos.z) * RADAR_PPM - 4, 8, 8);
   c.fillStyle = '#ff3b30';
   for (const e of enemies) {
     if (!e.active || e.dead) continue;
@@ -3247,9 +3475,9 @@ function updateHud(dt) {
   setText(hud.wave, wave.n > 0 ? `${roundWord()} ${wave.n}` : `${roundWord()} —`);
   setText(hud.left, `${wave.phase === 'active' ? wave.toSpawn + aliveCount : 0} ${zMode() ? 'zombies' : 'hostiles'}`);
   setText(hud.score, String(score));
-  const pips = uavT > 0 ? 8 : stats.kills % 8;
-  if (hud.uav._p !== pips) { hud.uav._p = pips; hud.uav.innerHTML = '<i class="f"></i>'.repeat(pips) + '<i></i>'.repeat(8 - pips); }
-  setClass(hud.uav, 'on', uavT > 0);
+  const ksHtml = KS.map((k) => (ksReady[k.id] ? `<div class="ks ready"><kbd>${k.key}</kbd>${k.name}${ksReady[k.id] > 1 ? ' ×' + ksReady[k.id] : ''}</div>` : `<div class="ks${streak >= k.kills ? ' got' : ''}"><i>${k.kills}</i>${k.name}</div>`)).join('')
+    + `<div class="kc">${streak} kill streak${uavT > 0 ? ' · UAV ' + Math.ceil(uavT) : ''}</div>`;
+  if (hud.streaks._h !== ksHtml) { hud.streaks._h = ksHtml; hud.streaks.innerHTML = ksHtml; }
   let hint = '', warn = false;
   if (cooking) { const left = Math.max(0, lethalFuse() - cookT); hint = left.toFixed(1); warn = left < 0.7; }
   else if (W.mag === 0 && W.reserve === 0) { hint = 'No ammo'; warn = true; }
@@ -3557,6 +3785,7 @@ function update(dt) {
   updateCook(dt);
   updateGrenades(dt);
   updatePickups(dt);
+  updateStreaks(dt);
   updateWaves(dt);
   if (P.alive && time - P.lastHurt > 3.5) P.hp = Math.min(P.maxHp, P.hp + 38 * (P.maxHp / 100) * dt);
   if (uavT > 0) uavT = Math.max(0, uavT - dt);
@@ -3719,6 +3948,9 @@ window.addEventListener('keydown', (e) => {
     case 'KeyR': startReload(); break;
     case 'Digit1': switchTo(0); break;
     case 'Digit2': switchTo(1); break;
+    case 'Digit4': useStreak('uav'); break;
+    case 'Digit5': useStreak('warthog'); break;
+    case 'Digit6': useStreak('chopper'); break;
     case 'KeyQ': switchTo(prevIdx); break;
     case 'KeyG': startCook(); break;
     case 'KeyV': case 'KeyF': melee(); break;
@@ -3858,6 +4090,7 @@ window.strikepoint = {
   get state() { return state; }, get stats() { return stats; }, get score() { return score; }, get aliveCount() { return aliveCount; },
   setFire(on) { mouseHeld = on; if (on) fireBuffer = 0.18; },
   freeze(on) { debugFreeze = on; }, reload: () => startReload(),
+  useStreak, ksReady, heli, strike, get streak() { return streak; }, get uavT() { return uavT; },
   vmRoot, weaponCamera, handL, handR, debugRender() { renderer.clear(); renderer.render(scene, camera); renderer.clearDepth(); renderer.render(weaponScene, weaponCamera); },
   startCook, releaseCook, get cooking() { return cooking; },
   setAds(on) { adsHeld = on; adsToggled = on; },
